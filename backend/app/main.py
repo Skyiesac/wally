@@ -12,7 +12,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Oggy Backend API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Backend API", version="1.0.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -22,4 +22,4 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"message": "Oggy Backend API", "version": "1.0.0"}
+    return {"message": "Backend API", "version": "1.0.0"}

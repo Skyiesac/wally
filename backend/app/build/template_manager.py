@@ -78,4 +78,4 @@ class TemplateManager:
     @staticmethod
     def sanitize_package_name(app_id: str) -> str:
         """Convert app ID to valid package name."""
-        return f"com.oggy.generated.{app_id.replace('-', '_')}"
+        return f"com.name.generated.{app_id.replace('-', '_')}"
