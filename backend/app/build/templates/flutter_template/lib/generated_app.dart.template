@@ -1,0 +1,16 @@
+// THIS FILE IS AUTO-GENERATED
+import 'package:flutter/material.dart';
+import 'dart:math';
+import 'dart:async';
+
+{{GENERATED_CODE}}
+
+// Wrapper to ensure compatibility
+class GeneratedWidget extends StatelessWidget {
+  const GeneratedWidget({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return const {{COMPONENT_NAME}}();
+  }
+}
