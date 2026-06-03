@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import os
 import shutil
@@ -7,6 +8,7 @@ from celery import Task
 
 from app.database import SessionLocal
 from app.models.app_models import Build, BuildStatus
+from app.storage.providers import get_storage_provider
 from app.tasks.celery_app import celery_app
 
 
@@ -41,8 +43,13 @@ def build_apk(self, build_id: str) -> dict:
         project_dir = _prepare_build_directory(build_id)
         result = _run_docker_build(build_id, project_dir)
         if result["success"]:
+            storage = get_storage_provider()
+            remote_key = f"builds/{build_id}/app-release.apk"
+            # asyncio.run is safe under the default prefork pool (forked child has no
+            # running loop); the solo pool runs inside the worker's loop and would raise.
+            asyncio.run(storage.upload_file(result["apk_path"], remote_key))
             build.status = BuildStatus.SUCCESS
-            build.apk_path = result["apk_path"]
+            build.apk_path = remote_key
             build.apk_size = result["apk_size"]
             build.build_log = result["log"]
             build.completed_at = datetime.utcnow()
