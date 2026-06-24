@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from . import models  # noqa: F401  (registers models on Base.metadata)
 from .api.routes import apps, builds, generation, websocket
+from .config import settings
 from .database import Base, engine
 
 
@@ -14,6 +16,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Backend API", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(generation.router)
 app.include_router(apps.router)

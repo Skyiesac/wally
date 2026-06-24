@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     ENVIRONMENT: str = "development"
     API_VERSION: str = "v1"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None

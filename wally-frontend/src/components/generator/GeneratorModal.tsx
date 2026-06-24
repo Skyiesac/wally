@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiClient } from '@/lib/api/client'
 import {
   useBuild,
@@ -25,6 +25,12 @@ const STEPS = [
   { n: 3, label: 'Build' },
 ]
 
+// Prompt input thresholds: match the backend's max_length and cap the
+// auto-growing box so the scroll can't extend without bound.
+const PROMPT_MAX_LENGTH = 2000
+const PROMPT_MAX_HEIGHT = 176
+const PROMPT_MIN_HEIGHT = 88
+
 export default function GeneratorModal({
   open,
   onClose,
@@ -40,6 +46,7 @@ export default function GeneratorModal({
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<GenerationResponse | null>(null)
   const [buildId, setBuildId] = useState<string | null>(null)
+  const promptRef = useRef<HTMLTextAreaElement>(null)
 
   const generate = useGenerateCode()
   const createApp = useCreateApp()
@@ -58,6 +65,16 @@ export default function GeneratorModal({
     setResult(null)
     setBuildId(null)
   }
+
+  // Grow the prompt box with its content, capped at a max height threshold
+  useEffect(() => {
+    const el = promptRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const next = Math.max(Math.min(el.scrollHeight, PROMPT_MAX_HEIGHT), PROMPT_MIN_HEIGHT)
+    el.style.height = `${next}px`
+    el.style.overflowY = el.scrollHeight > PROMPT_MAX_HEIGHT ? 'auto' : 'hidden'
+  }, [prompt])
 
   // Close on Escape + lock body scroll while open
   useEffect(() => {
@@ -224,12 +241,20 @@ export default function GeneratorModal({
                   What should we build?
                 </label>
                 <textarea
+                  ref={promptRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  rows={4}
+                  rows={3}
+                  maxLength={PROMPT_MAX_LENGTH}
                   placeholder="e.g. A to-do list app with checkboxes, a notes screen, and a counter on the home page…"
-                  className="w-full rounded-xl border border-earth-300 bg-white/70 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-400 focus:border-clay-400 transition-shadow"
+                  className="w-full rounded-xl border border-earth-300 bg-white/70 px-4 py-3 text-sm text-ink-900 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-400 focus:border-clay-400 transition-shadow resize-none min-h-[88px]"
                 />
+                <div className="mt-1 flex items-center justify-between text-[11px] text-ink-400">
+                  <span>Prompt grows as you type, then scrolls past {PROMPT_MAX_HEIGHT}px</span>
+                  <span className="tabular-nums">
+                    {prompt.length.toLocaleString()} / {PROMPT_MAX_LENGTH.toLocaleString()}
+                  </span>
+                </div>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
