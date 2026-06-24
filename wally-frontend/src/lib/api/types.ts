@@ -19,6 +19,31 @@ export interface GenerationResponse {
   success: boolean
   generated_code: string | null
   validation: ValidationResult | null
+  preview?: {
+    app_name: string
+    theme?: {
+      primary_color?: string
+      accent_color?: string
+    }
+    screens: Array<{
+      id: string
+      title: string
+      subtitle?: string
+      elements: Array<{
+        id: string
+        type: 'text' | 'stat' | 'list' | 'input' | 'progress' | 'image' | 'button'
+        label: string
+        value?: string
+        items?: string[]
+      }>
+      actions: Array<{
+        id: string
+        label: string
+        effect: 'navigate' | 'append' | 'toggle' | 'increment' | 'decrement'
+        target: string
+      }>
+    }>
+  } | null
   attempts: number
   errors: string[]
 }

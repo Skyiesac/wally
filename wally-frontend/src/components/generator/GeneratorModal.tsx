@@ -13,9 +13,10 @@ import type { GenerationResponse } from '@/lib/api/types'
 import {
   BUILD_STATUS_COLORS,
   BUILD_STATUS_LABELS,
-  DEFAULT_USER_ID,
   LLM_PROVIDERS,
 } from '@/lib/constants'
+
+const DEFAULT_USER_ID_VALUE = process.env.NEXT_PUBLIC_DEMO_USER_ID || 'user-demo-001'
 
 type Step = 'form' | 'generating' | 'review' | 'saving' | 'build'
 
@@ -30,6 +31,243 @@ const STEPS = [
 const PROMPT_MAX_LENGTH = 2000
 const PROMPT_MAX_HEIGHT = 176
 const PROMPT_MIN_HEIGHT = 88
+
+type PreviewElement = {
+  id: string
+  type: 'text' | 'stat' | 'list' | 'input' | 'progress' | 'image' | 'button'
+  label: string
+  value?: string
+  items?: string[]
+}
+
+type PreviewAction = {
+  id: string
+  label: string
+  effect: 'navigate' | 'append' | 'toggle' | 'increment' | 'decrement'
+  target: string
+}
+
+type PreviewScreen = {
+  id: string
+  title: string
+  subtitle?: string
+  elements: PreviewElement[]
+  actions: PreviewAction[]
+}
+
+type PreviewSpec = {
+  app_name: string
+  theme?: {
+    primary_color?: string
+    accent_color?: string
+  }
+  screens: PreviewScreen[]
+}
+
+type GenerationResponseWithPreview = GenerationResponse & {
+  preview?: PreviewSpec | null
+}
+
+function AppPreview({ preview, appName }: { preview: PreviewSpec | null | undefined; appName: string }) {
+  const screens = preview?.screens ?? []
+  const [activeScreenId, setActiveScreenId] = useState(screens[0]?.id ?? '')
+  const [values, setValues] = useState<Record<string, string | number | boolean | string[]>>({})
+  const activeScreen = screens.find((screen) => screen.id === activeScreenId) ?? screens[0]
+  const title = appName.trim() || preview?.app_name || activeScreen?.title || 'Preview'
+  const primaryColor = preview?.theme?.primary_color || '#7c3f2d'
+  const accentColor = preview?.theme?.accent_color || '#f0ebe3'
+
+  useEffect(() => {
+    setActiveScreenId(screens[0]?.id ?? '')
+    setValues({})
+  }, [preview])
+
+  const readValue = (element: PreviewElement) => values[element.id] ?? element.value ?? ''
+  const readItems = (element: PreviewElement) => {
+    const value = values[element.id]
+    return Array.isArray(value) ? value : element.items ?? []
+  }
+
+  const applyAction = (action: PreviewAction) => {
+    if (action.effect === 'navigate') {
+      const target = screens.find((screen) => screen.id === action.target)
+      if (target) setActiveScreenId(target.id)
+      return
+    }
+    const targetElement =
+      activeScreen?.elements.find((element) => element.id === action.target) ??
+      activeScreen?.elements.find((element) => element.type === 'list') ??
+      activeScreen?.elements[0]
+    if (!targetElement) return
+
+    setValues((current) => {
+      const next = { ...current }
+      const currentValue = next[targetElement.id] ?? targetElement.value ?? ''
+      if (action.effect === 'append') {
+        const items = Array.isArray(currentValue) ? currentValue : targetElement.items ?? []
+        next[targetElement.id] = [...items, `${action.label} ${items.length + 1}`]
+      }
+      if (action.effect === 'toggle') {
+        next[targetElement.id] = !(typeof currentValue === 'boolean' ? currentValue : false)
+      }
+      if (action.effect === 'increment' || action.effect === 'decrement') {
+        const numberValue = Number.parseInt(String(currentValue || 0), 10) || 0
+        next[targetElement.id] = action.effect === 'increment' ? numberValue + 1 : Math.max(0, numberValue - 1)
+      }
+      return next
+    })
+  }
+
+  const renderElement = (element: PreviewElement) => {
+    if (element.type === 'list') {
+      const items = readItems(element)
+      return (
+        <div key={element.id} className="space-y-2">
+          {element.label && <p className="text-xs font-semibold text-ink-500">{element.label}</p>}
+          {items.map((item, index) => (
+            <div key={`${element.id}-${index}`} className="rounded-lg border border-earth-200 bg-white p-3 text-sm text-ink-700">
+              {item}
+            </div>
+          ))}
+        </div>
+      )
+    }
+    if (element.type === 'stat') {
+      return (
+        <div key={element.id} className="rounded-lg border border-earth-200 bg-white p-3">
+          <p className="text-xs text-ink-400">{element.label}</p>
+          <p className="mt-1 text-2xl font-bold text-clay-800">{readValue(element)}</p>
+        </div>
+      )
+    }
+    if (element.type === 'input') {
+      return (
+        <label key={element.id} className="block">
+          <span className="text-xs font-semibold text-ink-500">{element.label}</span>
+          <input
+            value={String(readValue(element))}
+            onChange={(event) => setValues((current) => ({ ...current, [element.id]: event.target.value }))}
+            className="mt-1 w-full rounded-lg border border-earth-300 bg-white px-3 py-2 text-sm text-ink-800 focus:outline-none focus:ring-2 focus:ring-clay-400"
+          />
+        </label>
+      )
+    }
+    if (element.type === 'progress') {
+      const percent = Math.min(100, Math.max(0, Number.parseInt(String(readValue(element)), 10) || 0))
+      return (
+        <div key={element.id} className="rounded-lg border border-earth-200 bg-white p-3">
+          <div className="flex justify-between text-xs text-ink-500">
+            <span>{element.label}</span>
+            <span>{percent}%</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-earth-200">
+            <div className="h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: primaryColor }} />
+          </div>
+        </div>
+      )
+    }
+    if (element.type === 'image') {
+      return (
+        <div key={element.id} className="rounded-lg border border-earth-200 bg-white p-3">
+          <div className="h-24 rounded-md" style={{ background: `linear-gradient(135deg, ${accentColor}, ${primaryColor})` }} />
+          <p className="mt-2 text-sm font-semibold text-ink-700">{element.label}</p>
+        </div>
+      )
+    }
+    if (element.type === 'button') {
+      const buttonAction =
+        activeScreen?.actions.find((action) => action.target === element.id) ??
+        activeScreen?.actions.find((action) => action.effect !== 'navigate') ??
+        activeScreen?.actions[0]
+      return (
+        <button
+          key={element.id}
+          type="button"
+          onClick={() => buttonAction && applyAction(buttonAction)}
+          className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+          style={{ backgroundColor: primaryColor, boxShadow: `0 4px 14px ${primaryColor}40` }}
+        >
+          {element.label || 'Tap me'}
+        </button>
+      )
+    }
+    return (
+      <div key={element.id} className="rounded-lg border border-earth-200 bg-white p-3">
+        <p className="text-sm font-semibold text-ink-800">{element.label}</p>
+        {element.value && <p className="mt-1 text-xs leading-relaxed text-ink-500">{readValue(element)}</p>}
+      </div>
+    )
+  }
+
+  if (!activeScreen) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Preview was not returned by the backend. Generate again so the backend can create an app preview.
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[300px]">
+      <div className="rounded-[2rem] border-[9px] border-ink-900 bg-ink-900 shadow-paper">
+        <div className="overflow-hidden rounded-[1.45rem] bg-earth-50">
+          <div className="flex items-center justify-between px-4 py-3 text-white" style={{ backgroundColor: primaryColor }}>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-white/70">Preview</p>
+              <h3 className="max-w-[170px] truncate text-base font-semibold text-white">{title}</h3>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-sm font-semibold">
+              {screens.length}
+            </div>
+          </div>
+
+          <div className="flex min-h-[380px] flex-col px-4 py-4">
+            {screens.length > 1 && (
+              <div className="mb-4 grid rounded-full bg-earth-200 p-1 text-xs font-medium text-ink-600" style={{ gridTemplateColumns: `repeat(${screens.length}, minmax(0, 1fr))` }}>
+                {screens.map((screen) => (
+                  <button
+                    key={screen.id}
+                    type="button"
+                    onClick={() => setActiveScreenId(screen.id)}
+                    className={`truncate rounded-full px-2 py-2 transition-colors ${activeScreen.id === screen.id ? 'bg-white text-clay-800 shadow-paper' : ''}`}
+                  >
+                    {screen.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <h4 className="text-lg font-bold text-clay-900">{activeScreen.title}</h4>
+              {activeScreen.subtitle && <p className="mt-1 text-xs leading-relaxed text-ink-500">{activeScreen.subtitle}</p>}
+            </div>
+
+            <div className="flex-1 space-y-3">{activeScreen.elements.map(renderElement)}</div>
+
+            {activeScreen.actions.length > 0 && (
+              <div className="mt-5 space-y-2 border-t border-earth-200 pt-4">
+                {activeScreen.actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => applyAction(action)}
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+                    style={{ backgroundColor: primaryColor, boxShadow: `0 4px 14px ${primaryColor}40` }}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 text-center text-xs text-ink-400">
+        Interactive preview — tap the buttons inside the phone to try the app
+      </p>
+    </div>
+  )
+}
 
 export default function GeneratorModal({
   open,
@@ -112,7 +350,7 @@ export default function GeneratorModal({
         prompt: prompt.trim(),
         provider: provider as 'openai' | 'anthropic' | 'gemini',
         api_key: apiKey.trim(),
-        user_id: DEFAULT_USER_ID,
+        user_id: DEFAULT_USER_ID_VALUE,
       },
       {
         onSuccess: (res) => {
@@ -144,12 +382,12 @@ export default function GeneratorModal({
         prompt: prompt.trim(),
         generated_code: result.generated_code,
         component_name: result.validation?.component_name ?? '',
-        user_id: DEFAULT_USER_ID,
+        user_id: DEFAULT_USER_ID_VALUE,
       },
       {
         onSuccess: (app) => {
           createBuild.mutate(
-            { app_id: app.id, user_id: DEFAULT_USER_ID, version: '1.0.0' },
+            { app_id: app.id, user_id: DEFAULT_USER_ID_VALUE, version: '1.0.0' },
             {
               onSuccess: (b) => {
                 setBuildId(b.id)
@@ -360,18 +598,20 @@ export default function GeneratorModal({
                 </div>
               )}
 
-              {/* Code preview */}
-              <div className="rounded-xl border border-earth-200 bg-ink-900 overflow-hidden">
-                <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/10">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-400/80" />
-                  <span className="ml-2 text-xs text-ink-300">generated_app.dart</span>
-                </div>
-                <pre className="px-4 py-3 max-h-56 overflow-y-auto text-xs leading-relaxed text-earth-100 font-mono">
+              <AppPreview
+                appName={appName}
+                preview={(result as GenerationResponseWithPreview | null)?.preview ?? null}
+              />
+
+              {/* Raw Dart code stays hidden by default — the visual preview is the star */}
+              <details className="rounded-xl border border-earth-200 bg-white/60">
+                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-ink-500 transition-colors hover:text-clay-800">
+                  View generated code (optional)
+                </summary>
+                <pre className="max-h-64 overflow-auto border-t border-earth-200 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-700">
                   {result.generated_code}
                 </pre>
-              </div>
+              </details>
 
               <div className="flex gap-3">
                 <button
@@ -421,11 +661,12 @@ export default function GeneratorModal({
                 </div>
               )}
 
-              {build.data?.status === 'SUCCESS' && build.data.apk_url && (
+              {build.data?.status === 'SUCCESS' && buildId && (
                 <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 animate-fade-in">
-                  <p className="font-medium mb-2">Your APK is ready 🎉</p>
+                  <p className="font-medium mb-2">Your APK is ready</p>
                   <a
                     href={apiClient.getDownloadURL(buildId!)}
+                    download={`${appName.trim() || 'wally-app'}.apk`}
                     className="inline-flex items-center gap-2 watercolor-btn !py-2.5 !px-5 text-sm"
                   >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">

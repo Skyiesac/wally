@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import './globals.css'
 import '../styles/watercolor.css'
 import { QueryProvider } from '@/providers/QueryProvider'
+import { WebSocketProvider } from '@/components/WebSocketProvider'
 
 export const metadata: Metadata = {
   title: 'Wally - AI App Generator',
@@ -25,7 +26,9 @@ export default function RootLayout({
         </div>
 
         <QueryProvider>
-          {children}
+          <WebSocketProvider>
+            {children}
+          </WebSocketProvider>
         </QueryProvider>
       </body>
     </html>
