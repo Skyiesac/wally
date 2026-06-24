@@ -24,6 +24,7 @@ def to_generation_response(result) -> GenerationResponse:
         success=result.success,
         generated_code=result.generated_code,
         validation=validation,
+        preview=result.preview_spec,
         attempts=result.attempts,
         errors=result.errors,
     )

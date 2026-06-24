@@ -1,8 +1,11 @@
+import json
+import re
+from copy import deepcopy
 from typing import AsyncGenerator
 
 from pydantic import BaseModel
 
-from app.llm.prompts import FLUTTER_SYSTEM_PROMPT
+from app.llm.prompts import FLUTTER_SYSTEM_PROMPT, PREVIEW_SYSTEM_PROMPT
 from app.llm.providers import get_provider
 from app.validation.validators import ValidationResult, validate_dart_code
 
@@ -13,16 +16,27 @@ class GenerationRequest(BaseModel):
     api_key: str
     max_refinement_attempts: int = 3
     temperature: float = 0.7
-    max_tokens: int = 2000
+    # 2000 tokens frequently truncates complex widgets mid-build-method;
+    # 4096 gives complete outputs while staying inside most model limits.
+    max_tokens: int = 4096
 
 
 class GenerationResult(BaseModel):
     success: bool
     generated_code: str | None
     validation_result: ValidationResult | None
+    preview_spec: dict | None = None
     attempts: int
     errors: list[str]
     provider_used: str
+
+
+ALLOWED_ELEMENT_TYPES = {"text", "stat", "list", "input", "progress", "image", "button"}
+ALLOWED_ACTION_EFFECTS = {"navigate", "append", "toggle", "increment", "decrement"}
+WIDGET_CLASS_START_PATTERN = re.compile(
+    r"(?:(?:final|base|sealed|interface|abstract|mixin)\s+)*class\s+\w+(?:<[^>]+>)?\s+extends\s+"
+    r"(?:StatelessWidget|StatefulWidget)\b"
+)
 
 
 class GenerationOrchestrator:
@@ -47,14 +61,24 @@ class GenerationOrchestrator:
                 cleaned_code = self._clean_code(raw_code)
                 validation = validate_dart_code(cleaned_code)
                 if validation.is_valid:
+                    preview_spec = await self._generate_preview_spec(
+                        provider=provider,
+                        prompt=request.prompt,
+                        generated_code=cleaned_code,
+                        component_name=validation.component_name,
+                    )
                     return GenerationResult(
                         success=True,
                         generated_code=cleaned_code,
                         validation_result=validation,
+                        preview_spec=preview_spec,
                         attempts=attempts,
                         errors=[],
                         provider_used=request.provider,
                     )
+                # TEMP DIAGNOSTIC — dump raw output for failed attempts so we can
+                # see exactly what the model returned. Remove once stable.
+                self._dump_failure(raw_code, cleaned_code, validation.errors, request.provider, attempts)
                 errors.extend(validation.errors)
                 refinement_prompt = (
                     f"The previous code had validation errors:\n"
@@ -70,6 +94,7 @@ class GenerationOrchestrator:
             success=False,
             generated_code=None,
             validation_result=None,
+            preview_spec=None,
             attempts=attempts,
             errors=errors,
             provider_used=request.provider,
@@ -86,14 +111,195 @@ class GenerationOrchestrator:
         async for chunk in provider.generate_stream(request.prompt, FLUTTER_SYSTEM_PROMPT):
             yield chunk
 
+    @staticmethod
+    def _dump_failure(
+        raw_code: str,
+        cleaned_code: str,
+        errors: list[str],
+        provider: str,
+        attempts: int,
+    ) -> None:
+        """Temporary diagnostic: write failed generation output to a file."""
+        try:
+            with open("/tmp/wally_raw_output.log", "a") as f:
+                f.write(f"\n=== attempt {attempts} ({provider}) ===\n")
+                f.write(f"ERRORS: {errors}\n")
+                f.write(f"RAW:\n{raw_code}\n\n")
+                f.write(f"CLEANED:\n{cleaned_code}\n")
+        except Exception:
+            pass
+
+    async def _generate_preview_spec(
+        self,
+        provider,
+        prompt: str,
+        generated_code: str,
+        component_name: str | None,
+    ) -> dict:
+        """Build the interactive preview plan.
+
+        The preview comes from a second LLM call so the frontend can render an
+        interactive mockup. If that call fails (network, parsing, safety), fall
+        back to a small hand-built spec derived from the prompt/component so the
+        review step ALWAYS has something interactive to show.
+        """
+        preview_prompt = (
+            f"User prompt:\n{prompt}\n\n"
+            f"Flutter widget class: {component_name or 'Unknown'}\n\n"
+            f"Generated Flutter code:\n{generated_code[:6000]}\n\n"
+            f"Return the JSON preview plan now."
+        )
+        try:
+            raw_preview = await provider.generate(preview_prompt, PREVIEW_SYSTEM_PROMPT)
+            parsed = self._parse_json_object(raw_preview)
+            spec = self._sanitize_preview_spec(parsed)
+            if spec:
+                return spec
+        except Exception:
+            pass
+        return self._fallback_preview_spec(prompt, component_name)
+
+    @staticmethod
+    def _fallback_preview_spec(prompt: str, component_name: str | None) -> dict:
+        """Minimal interactive preview when the LLM preview call fails."""
+        title = (
+            component_name.replace("_", " ").strip().title()
+            if component_name
+            else "My App"
+        )[:40]
+        return {
+            "app_name": title,
+            "theme": {"primary_color": "#7c3f2d", "accent_color": "#f0ebe3"},
+            "screens": [
+                {
+                    "id": "home",
+                    "title": title,
+                    "subtitle": (prompt[:100] + ("…" if len(prompt) > 100 else "")),
+                    "elements": [
+                        {
+                            "id": "intro_text",
+                            "type": "text",
+                            "label": "Welcome",
+                            "value": (prompt[:200] + ("…" if len(prompt) > 200 else "")),
+                        },
+                        {"id": "counter", "type": "stat", "label": "Counter", "value": "0"},
+                    ],
+                    "actions": [
+                        {
+                            "id": "tap_counter",
+                            "label": "Tap to count",
+                            "effect": "increment",
+                            "target": "counter",
+                        }
+                    ],
+                }
+            ],
+        }
+
+    @staticmethod
+    def _parse_json_object(raw: str) -> dict:
+        fence_match = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
+        if fence_match:
+            raw = fence_match.group(1)
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("Preview response did not contain a JSON object")
+        parsed = json.loads(raw[start : end + 1])
+        if not isinstance(parsed, dict):
+            raise ValueError("Preview response must be a JSON object")
+        return parsed
+
+    @staticmethod
+    def _clean_id(value: object, fallback: str) -> str:
+        text = re.sub(r"[^a-z0-9_]+", "_", str(value or "").lower()).strip("_")
+        return text or fallback
+
+    def _sanitize_preview_spec(self, raw: dict) -> dict | None:
+        spec = deepcopy(raw)
+        theme = spec.get("theme") if isinstance(spec.get("theme"), dict) else {}
+        screens = spec.get("screens") if isinstance(spec.get("screens"), list) else []
+        clean_screens: list[dict] = []
+
+        for screen_index, screen in enumerate(screens[:3]):
+            if not isinstance(screen, dict):
+                continue
+            screen_id = self._clean_id(screen.get("id"), f"screen_{screen_index + 1}")
+            elements = screen.get("elements") if isinstance(screen.get("elements"), list) else []
+            actions = screen.get("actions") if isinstance(screen.get("actions"), list) else []
+            clean_elements: list[dict] = []
+            clean_actions: list[dict] = []
+
+            for element_index, element in enumerate(elements[:5]):
+                if not isinstance(element, dict):
+                    continue
+                element_type = str(element.get("type") or "text").lower()
+                if element_type not in ALLOWED_ELEMENT_TYPES:
+                    element_type = "text"
+                items = element.get("items") if isinstance(element.get("items"), list) else []
+                clean_elements.append(
+                    {
+                        "id": self._clean_id(element.get("id"), f"element_{element_index + 1}"),
+                        "type": element_type,
+                        "label": str(element.get("label") or "")[:80],
+                        "value": str(element.get("value") or "")[:120],
+                        "items": [str(item)[:80] for item in items[:6]],
+                    }
+                )
+
+            for action_index, action in enumerate(actions[:3]):
+                if not isinstance(action, dict):
+                    continue
+                effect = str(action.get("effect") or "append").lower()
+                if effect not in ALLOWED_ACTION_EFFECTS:
+                    effect = "append"
+                clean_actions.append(
+                    {
+                        "id": self._clean_id(action.get("id"), f"action_{action_index + 1}"),
+                        "label": str(action.get("label") or "Action")[:40],
+                        "effect": effect,
+                        "target": self._clean_id(action.get("target"), screen_id),
+                    }
+                )
+
+            if clean_elements:
+                clean_screens.append(
+                    {
+                        "id": screen_id,
+                        "title": str(screen.get("title") or "Preview")[:50],
+                        "subtitle": str(screen.get("subtitle") or "")[:100],
+                        "elements": clean_elements,
+                        "actions": clean_actions,
+                    }
+                )
+
+        if not clean_screens:
+            return None
+
+        return {
+            "app_name": str(spec.get("app_name") or clean_screens[0]["title"])[:50],
+            "theme": {
+                "primary_color": str(theme.get("primary_color") or "#6750A4")[:16],
+                "accent_color": str(theme.get("accent_color") or "#EADDFF")[:16],
+            },
+            "screens": clean_screens,
+        }
+
     def _clean_code(self, code: str) -> str:
-        """Clean generated code."""
-        if code.startswith("```dart"):
-            code = code[7:]
-        if code.startswith("```"):
-            code = code[3:]
-        if code.endswith("```"):
-            code = code[:-3]
+        """Clean generated code: unwrap markdown fences/wrapper text, drop imports."""
+        # Models often wrap the answer in ```dart fences, sometimes with a
+        # leading explanation. Extract the first fenced block when present.
+        fence_match = re.search(r"```(?:dart|flutter)?\s*(.*?)```", code, re.DOTALL)
+        if fence_match:
+            code = fence_match.group(1)
+        else:
+            # No fence: drop any prose/comment text before the first import or class
+            import_match = re.search(r"import\s+['\"]", code)
+            class_match = WIDGET_CLASS_START_PATTERN.search(code)
+            matches = [match for match in (import_match, class_match) if match]
+            start_match = min(matches, key=lambda match: match.start()) if matches else None
+            if start_match:
+                code = code[start_match.start():]
         cleaned_lines: list[str] = []
         for line in code.split("\n"):
             stripped = line.lstrip()

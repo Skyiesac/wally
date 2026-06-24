@@ -1,9 +1,11 @@
 from typing import AsyncGenerator
 
 from anthropic import AsyncAnthropic
-from google import generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from openai import AsyncOpenAI
 
+from app.config import settings
 from .base import LLMProvider
 
 
@@ -101,37 +103,43 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-pro",
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000,
     ):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        # google-generativeai (the old SDK) is end-of-life and returns mangled
+        # partial text with Gemini 3 models (see /tmp/wally_raw_output.log —
+        # responses cut mid-widget-tree). google-genai is the current SDK.
+        self.client = genai.Client(api_key=api_key)
+        self.model = model or settings.GEMINI_MODEL
         self.temperature = temperature
         self.max_tokens = max_tokens
 
+    def _config(self, system_prompt: str) -> genai_types.GenerateContentConfig:
+        return genai_types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=self.temperature,
+            max_output_tokens=self.max_tokens,
+            response_mime_type="text/plain",
+        )
+
     async def generate(self, prompt: str, system_prompt: str) -> str:
         try:
-            response = await self.model.generate_content_async(
-                f"{system_prompt}\n\n{prompt}",
-                generation_config={
-                    "temperature": self.temperature,
-                    "max_output_tokens": self.max_tokens,
-                },
+            response = await self.client.aio.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=self._config(system_prompt),
             )
-            return response.text
+            return response.text or ""
         except Exception as e:
             raise ValueError(f"Gemini generation failed: {e}") from e
 
     async def generate_stream(self, prompt: str, system_prompt: str) -> AsyncGenerator[str, None]:
         try:
-            stream = await self.model.generate_content_async(
-                f"{system_prompt}\n\n{prompt}",
-                generation_config={
-                    "temperature": self.temperature,
-                    "max_output_tokens": self.max_tokens,
-                },
-                stream=True,
+            stream = await self.client.aio.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=self._config(system_prompt),
             )
             async for chunk in stream:
                 if chunk.text:

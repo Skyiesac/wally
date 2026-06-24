@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 
@@ -44,6 +44,7 @@ class GenerationResponse(BaseModel):
     success: bool
     generated_code: Optional[str]
     validation: Optional[ValidationResponse]
+    preview: Optional[Dict[str, Any]] = None
     attempts: int
     errors: List[str]
 
