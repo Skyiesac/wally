@@ -141,7 +141,29 @@ def _prepare_build_directory(build_id: str) -> str:
 
 def _run_docker_build(build_id: str, project_dir: str) -> dict:
     """Run Flutter build in Docker container."""
-    cmd = [
+    cmd = _docker_build_command(project_dir)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+    if result.returncode != 0 and "permission denied" in result.stderr.lower():
+        result = subprocess.run(
+            ["sudo", "-n", *cmd],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+    if result.returncode == 0:
+        apk_path = f"{project_dir}/build/app/outputs/flutter-apk/app-release.apk"
+        size = os.path.getsize(apk_path)
+        return {"success": True, "apk_path": apk_path, "apk_size": size, "log": result.stdout}
+    return {"success": False, "error": result.stderr, "log": result.stdout}
+
+
+def _docker_build_command(project_dir: str) -> list[str]:
+    return [
         "docker", "run", "--rm",
         "-v", f"{project_dir}:/workspace",
         "-w", "/workspace",
@@ -149,14 +171,3 @@ def _run_docker_build(build_id: str, project_dir: str) -> dict:
         "sh", "-c",
         "flutter pub get && flutter build apk --release",
     ]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=900,
-    )
-    if result.returncode == 0:
-        apk_path = f"{project_dir}/build/app/outputs/flutter-apk/app-release.apk"
-        size = os.path.getsize(apk_path)
-        return {"success": True, "apk_path": apk_path, "apk_size": size, "log": result.stdout}
-    return {"success": False, "error": result.stderr, "log": result.stdout}

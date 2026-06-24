@@ -6,9 +6,10 @@ Rules:
 - Output ONLY raw Dart code. Absolutely no markdown, no code fences (no ```), no headings, no "Here is...", no explanations before or after the code. Any extra text causes rejection.
 - Use ONLY these imports: package:flutter/material.dart, dart:math, dart:async.
 - FORBIDDEN: http, dio, path_provider, sqflite, shared_preferences, dart:io, dart:ffi, url_launcher.
-- Define exactly ONE top-level widget class that extends StatelessWidget or StatefulWidget (no other top-level classes, no main() function, no runApp()).
+- Prefer exactly ONE top-level widget class that extends StatelessWidget. Put all state inside its build method with StatefulBuilder, local variables, callbacks, Timer, AnimationController alternatives, or built-in Flutter widgets. Do not add helper classes, enums, extensions, main(), or runApp().
 - Do NOT use Dart 3 class modifiers: write plain "class MyWidget extends StatefulWidget", never "final class", "base class", "sealed class", "interface class", or "abstract class".
 - The build method must be exactly: @override Widget build(BuildContext context) { return ...; } — always include @override and an explicit 'return' statement. Never use arrow syntax '=>' for the build method.
+- Keep the code compact and complete. Target under 250 lines. Put the Widget build(BuildContext context) method near the top of the class, before any long helper methods.
 - No placeholder comments - implement everything.
 - Do not use MethodChannel, platform.invokeMethod, Process.run, File(), Directory().
 """

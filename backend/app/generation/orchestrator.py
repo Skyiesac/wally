@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 
 from pydantic import BaseModel
 
+from app.config import settings
 from app.llm.prompts import FLUTTER_SYSTEM_PROMPT, PREVIEW_SYSTEM_PROMPT
 from app.llm.providers import get_provider
 from app.validation.validators import ValidationResult, validate_dart_code
@@ -16,9 +17,8 @@ class GenerationRequest(BaseModel):
     api_key: str
     max_refinement_attempts: int = 3
     temperature: float = 0.7
-    # 2000 tokens frequently truncates complex widgets mid-build-method;
-    # 4096 gives complete outputs while staying inside most model limits.
-    max_tokens: int = 4096
+    # Low output budgets frequently truncate complex widgets before build(...).
+    max_tokens: int = settings.LLM_MAX_TOKENS
 
 
 class GenerationResult(BaseModel):
@@ -80,9 +80,18 @@ class GenerationOrchestrator:
                 # see exactly what the model returned. Remove once stable.
                 self._dump_failure(raw_code, cleaned_code, validation.errors, request.provider, attempts)
                 errors.extend(validation.errors)
+                truncation_hint = ""
+                if any("Widget build(...) method" in error for error in validation.errors):
+                    truncation_hint = (
+                        "\nThe previous response appears incomplete or too long: it did not include "
+                        "a Widget build(BuildContext context) method. Generate a shorter COMPLETE "
+                        "widget under 250 lines. Prefer a single StatelessWidget and StatefulBuilder. "
+                        "Put @override Widget build(BuildContext context) near the top of the class.\n"
+                    )
                 refinement_prompt = (
                     f"The previous code had validation errors:\n"
                     f"{chr(10).join(validation.errors)}\n\n"
+                    f"{truncation_hint}\n"
                     f"Original request: {request.prompt}\n\n"
                     f"Generate corrected Flutter code that fixes these issues."
                 )

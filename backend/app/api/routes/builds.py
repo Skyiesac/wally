@@ -1,12 +1,13 @@
 from datetime import datetime
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.schemas import BuildRequest, BuildResponse
 from app.build.template_manager import ProjectConfig, TemplateManager
+from app.config import settings
 from app.database import get_db
 from app.models.app_models import App, Build, BuildStatus, User
 from app.storage.providers import get_storage_provider
@@ -17,13 +18,18 @@ router = APIRouter(prefix="/api/builds", tags=["builds"])
 
 
 @router.post("", response_model=BuildResponse)
-async def create_build(request: BuildRequest, db: Session = Depends(get_db)):
+async def create_build(
+    request: BuildRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Trigger APK build."""
     app = db.query(App).filter(App.id == request.app_id).first()
     if app is None:
         raise HTTPException(status_code=404, detail="App not found")
     user = db.query(User).filter(User.id == request.user_id).first()
-    if user is None or user.build_credits <= 0:
+    enforce_build_credits = settings.ENVIRONMENT != "development"
+    if enforce_build_credits and (user is None or user.build_credits <= 0):
         raise HTTPException(status_code=402, detail="Insufficient build credits")
 
     component_name = validate_dart_code(app.generated_code).component_name
@@ -63,12 +69,16 @@ async def create_build(request: BuildRequest, db: Session = Depends(get_db)):
     template_manager = TemplateManager("app/build/templates/flutter_template")
     template_manager.prepare_project(config, project_dir)
 
-    build_apk.delay(build_id)
     build.status = BuildStatus.QUEUED
-    user.build_credits -= 1
+    if enforce_build_credits and user is not None:
+        user.build_credits -= 1
     db.add(build)
     db.commit()
     db.refresh(build)
+    if settings.ENVIRONMENT == "development":
+        background_tasks.add_task(build_apk.run, build_id)
+    else:
+        build_apk.delay(build_id)
     return build
 
 
