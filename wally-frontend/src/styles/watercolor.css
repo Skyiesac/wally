@@ -1,0 +1,114 @@
+/* Watercolor brush strokes */
+.brush-stroke {
+  position: relative;
+  overflow: hidden;
+}
+
+.brush-stroke::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(212, 193, 165, 0.1) 40%,
+    rgba(181, 130, 93, 0.15) 60%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s ease-out;
+}
+
+.brush-stroke:hover::after {
+  transform: translateX(100%);
+}
+
+/* Watercolor button */
+.watercolor-btn {
+  position: relative;
+  background: linear-gradient(135deg, #b08d65 0%, #9d7a56 100%);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 
+    0 4px 15px rgba(176, 141, 101, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.watercolor-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  padding: 2px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), transparent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.watercolor-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 6px 20px rgba(176, 141, 101, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.watercolor-btn:hover::before {
+  opacity: 1;
+}
+
+.watercolor-btn:active {
+  transform: translateY(0);
+}
+
+/* Watercolor border */
+.watercolor-border {
+  position: relative;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.watercolor-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(
+    135deg,
+    rgba(212, 193, 165, 0.5),
+    rgba(181, 130, 93, 0.5),
+    rgba(156, 122, 86, 0.5)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Blob keyframes: Tailwind only emits config keyframes when the matching
+   animation utility is used, so define them here for the custom classes. */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+/* Floating hero cards */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+
+.float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-slower {
+  animation: float 8s ease-in-out 1.2s infinite;
+}
