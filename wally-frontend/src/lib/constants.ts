@@ -1,6 +1,9 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
 
+// No auth yet — user_id is hardcoded for now (backend seeds this demo user)
+export const DEFAULT_USER_ID = process.env.NEXT_PUBLIC_DEMO_USER_ID || 'user-demo-001'
+
 export const LLM_PROVIDERS = [
   { value: 'openai', label: 'OpenAI GPT-4' },
   { value: 'anthropic', label: 'Claude 3' },

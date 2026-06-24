@@ -1,6 +1,11 @@
+'use client'
+
+import { useState } from 'react'
 import HeroArt from '@/components/ui/HeroArt'
+import GeneratorModal from '@/components/generator/GeneratorModal'
 
 export default function Home() {
+  const [generatorOpen, setGeneratorOpen] = useState(false)
   const steps = [
     {
       n: '01',
@@ -27,7 +32,12 @@ export default function Home() {
           <a href="#how" className="hover:text-clay-700 transition-colors">How it works</a>
           <a href="#features" className="hover:text-clay-700 transition-colors">Features</a>
         </div>
-        <button className="watercolor-btn !py-2 !px-5 text-sm">Get Started</button>
+        <button
+          onClick={() => setGeneratorOpen(true)}
+          className="watercolor-btn !py-2 !px-5 text-sm"
+        >
+          Get Started
+        </button>
       </nav>
 
       <section className="max-w-6xl mx-auto px-6 pt-10 pb-24 grid lg:grid-cols-2 gap-14 lg:gap-16 items-center">
@@ -43,7 +53,9 @@ export default function Home() {
             downloadable Android app — no coding required.
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            <button className="watercolor-btn">Start building</button>
+            <button onClick={() => setGeneratorOpen(true)} className="watercolor-btn">
+              Start building
+            </button>
             <a
               href="#how"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-full border-2 border-clay-300 text-clay-700 font-medium hover:bg-clay-50 transition-colors"
@@ -82,6 +94,8 @@ export default function Home() {
       <footer className="py-10 text-center text-xs text-ink-400">
         Wally · made with watercolor &amp; code
       </footer>
+
+      <GeneratorModal open={generatorOpen} onClose={() => setGeneratorOpen(false)} />
     </main>
   )
 }
