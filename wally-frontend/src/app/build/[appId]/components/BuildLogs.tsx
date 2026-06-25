@@ -19,8 +19,10 @@ export function BuildLogs({ buildId }: BuildLogsProps) {
     )
   }
 
-  const logText =
-    logs?.build_log || logs?.error_log || 'No logs available'
+  const logText = [logs?.build_log, logs?.error_log]
+    .filter(Boolean)
+    .join('\n\n')
+    || 'No logs available yet'
 
   return (
     <motion.div

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -76,9 +76,9 @@ async def create_build(
     db.commit()
     db.refresh(build)
     if settings.ENVIRONMENT == "development":
-        background_tasks.add_task(build_apk.run, build_id)
+        background_tasks.add_task(build_apk.run, build_id, request.provider, request.api_key)
     else:
-        build_apk.delay(build_id)
+        build_apk.delay(build_id, request.provider, request.api_key)
     return build
 
 
@@ -88,6 +88,20 @@ async def get_build(build_id: str, db: Session = Depends(get_db)):
     build = db.query(Build).filter(Build.id == build_id).first()
     if build is None:
         raise HTTPException(status_code=404, detail="Build not found")
+    if (
+        settings.ENVIRONMENT == "development"
+        and build.status == BuildStatus.QUEUED
+        and build.started_at is None
+        and datetime.utcnow() - build.queued_at > timedelta(minutes=2)
+    ):
+        build.status = BuildStatus.FAILED
+        build.error_log = (
+            build.error_log
+            or "Build stayed queued for more than 2 minutes. Restart the backend and start a new build."
+        )
+        build.completed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(build)
     response = BuildResponse(
         id=build.id,
         app_id=build.app_id,

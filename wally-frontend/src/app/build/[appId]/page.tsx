@@ -24,7 +24,7 @@ export default function BuildPage() {
   const createBuild = useCreateBuild()
   const { data: build } = useBuild(activeBuildId)
 
-  const [showLogs, setShowLogs] = useState(false)
+  const [showLogs, setShowLogs] = useState(true)
 
   const handleStartBuild = async () => {
     try {
@@ -34,6 +34,7 @@ export default function BuildPage() {
         version: '1.0.0',
       })
       setActiveBuild(newBuild.id)
+      setShowLogs(true)
     } catch (error) {
       alert(
         'Failed to start build: ' +
@@ -258,7 +259,7 @@ export default function BuildPage() {
             )}
 
             {/* Build Logs Toggle */}
-            {(build?.status === 'FAILED' || build?.status === 'SUCCESS') && (
+            {build && (
               <div className="text-center">
                 <button
                   onClick={() => setShowLogs(!showLogs)}

@@ -99,13 +99,31 @@ class GenerationOrchestrator:
             except Exception as e:
                 errors.append(str(e))
                 break
+        fallback_code = self._fallback_flutter_widget(request.prompt)
+        fallback_validation = validate_dart_code(fallback_code)
+        if fallback_validation.is_valid:
+            fallback_validation.warnings.append(
+                "AI output was incomplete after retries; returned a compact local fallback widget."
+            )
+            return GenerationResult(
+                success=True,
+                generated_code=fallback_code,
+                validation_result=fallback_validation,
+                preview_spec=self._fallback_preview_spec(
+                    request.prompt,
+                    fallback_validation.component_name,
+                ),
+                attempts=attempts,
+                errors=[],
+                provider_used=request.provider,
+            )
         return GenerationResult(
             success=False,
             generated_code=None,
-            validation_result=None,
+            validation_result=fallback_validation,
             preview_spec=None,
             attempts=attempts,
-            errors=errors,
+            errors=errors or fallback_validation.errors,
             provider_used=request.provider,
         )
 
@@ -204,6 +222,109 @@ class GenerationOrchestrator:
                 }
             ],
         }
+
+    @staticmethod
+    def _fallback_flutter_widget(prompt: str) -> str:
+        title = GenerationOrchestrator._dart_string(
+            (prompt.strip().splitlines()[0] if prompt.strip() else "Generated App")[:48]
+        )
+        summary = GenerationOrchestrator._dart_string(
+            (prompt.strip() or "Your generated app is ready.")[:220]
+        )
+        return f"""class GeneratedPromptApp extends StatelessWidget {{
+  const GeneratedPromptApp({{Key? key}}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {{
+    int taps = 0;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F2EA),
+      appBar: AppBar(
+        title: const Text({title}),
+        backgroundColor: const Color(0xFF5B5A3C),
+        foregroundColor: Colors.white,
+      ),
+      body: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {{
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Generated Preview',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF8A5A44),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          {summary},
+                          style: const TextStyle(
+                            fontSize: 20,
+                            height: 1.3,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF25211D),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Interactions: $taps',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFF5C5A52),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: () => setState(() => taps++),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8A5A44),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Tap to interact'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }},
+      ),
+    );
+  }}
+}}"""
+
+    @staticmethod
+    def _dart_string(value: str) -> str:
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        escaped = escaped.replace("\r", " ").replace("\n", " ")
+        return f"'{escaped}'"
 
     @staticmethod
     def _parse_json_object(raw: str) -> dict:

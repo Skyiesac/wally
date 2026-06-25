@@ -107,5 +107,6 @@ export function useBuildLogs(buildId: string | null) {
     queryKey: queryKeys.buildLogs(buildId ?? ''),
     queryFn: () => apiClient.getBuildLogs(buildId ?? ''),
     enabled: !!buildId,
+    refetchInterval: 3000,
   })
 }

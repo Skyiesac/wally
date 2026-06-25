@@ -30,6 +30,8 @@ class BuildRequest(BaseModel):
     app_id: str
     user_id: str
     version: str = Field(default="1.0.0")
+    provider: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 # Response schemas
